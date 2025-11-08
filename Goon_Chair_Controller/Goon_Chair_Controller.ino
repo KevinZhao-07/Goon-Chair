@@ -6,7 +6,7 @@ const int rightReverse = 5;
 
 // -------------------- Constants --------------------
 const int MAX_SPEED = 150;
-const float kP = 0.2;            // proportional gain for X-centering
+const float kP = 0.167;            // proportional gain for X-centering
 const int DEFAULT_FORWARD = 67;    // default forward speed
 const int DEADZONE = 10;           // pixels
 
