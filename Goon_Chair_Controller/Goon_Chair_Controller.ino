@@ -6,7 +6,7 @@ const int rightReverse = 5;
 
 // -------------------- Constants --------------------
 const int MAX_SPEED = 150;
-const float kP = 0.167;            // proportional gain for X-centering
+const float kP = 0.2;            // proportional gain for X-centering
 const int DEFAULT_FORWARD = 67;    // default forward speed
 const int DEADZONE = 10;           // pixels
 
@@ -17,7 +17,7 @@ int targetLeft   = 0;
 int targetRight  = 0;
 
 unsigned long lastRampTime = 0;
-const unsigned long rampInterval = 20; // ms per step
+const unsigned long rampInterval = 10; // ms per step
 
 // -------------------- Setup --------------------
 void setup() {
