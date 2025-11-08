@@ -17,7 +17,7 @@ int targetLeft   = 0;
 int targetRight  = 0;
 
 unsigned long lastRampTime = 0;
-const unsigned long rampInterval = 10; // ms per step
+const unsigned long rampInterval = 2; // ms per step
 
 // -------------------- Setup --------------------
 void setup() {

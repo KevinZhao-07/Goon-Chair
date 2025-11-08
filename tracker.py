@@ -7,7 +7,7 @@ import time
 # ---------------- Arduino Setup ----------------
 arduino = None
 try:
-    arduino = serial.Serial('COM7', 9600, timeout=1)
+    arduino = serial.Serial('COM7', 115200, timeout=1)
     time.sleep(2)  # wait for Arduino to initialize
     print("✅ Arduino connected.")
 except serial.SerialException:
@@ -22,8 +22,8 @@ pose = mp_pose.Pose(
 
 # ---------------- Webcam Setup ----------------
 cap = cv2.VideoCapture(1)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 cap.set(cv2.CAP_PROP_FPS, 30)
 
 if not cap.isOpened():
