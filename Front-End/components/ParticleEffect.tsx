@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, memo } from "react";
 
 interface ParticleEffectProps {
   id: number;
@@ -9,7 +9,7 @@ interface ParticleEffectProps {
   onComplete: () => void;
 }
 
-export function ParticleEffect({ id, x, y, onComplete }: ParticleEffectProps) {
+function ParticleEffectComponent({ id, x, y, onComplete }: ParticleEffectProps) {
   const particlesContainerRef = useRef<HTMLDivElement>(null); // Renamed for clarity
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const particleElementsRef = useRef<HTMLDivElement[]>([]); // Renamed for clarity
@@ -98,4 +98,6 @@ export function ParticleEffect({ id, x, y, onComplete }: ParticleEffectProps) {
 
   return <div ref={particlesContainerRef} className="fixed inset-0 pointer-events-none z-50" data-particle-container={id} />;
 }
+
+export const ParticleEffect = memo(ParticleEffectComponent);
 

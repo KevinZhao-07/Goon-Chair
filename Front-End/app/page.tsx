@@ -27,10 +27,16 @@ export default function Home() {
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
 
-      // Add a new particle effect without clearing existing ones
-      particleIdRef.current += 1;
-      const id = particleIdRef.current;
-      setParticles((prev) => [...prev, { id, x, y }]);
+      // Clear all existing particles first
+      setParticles([]);
+      
+      // Use setTimeout to ensure cleanup completes before new animation starts
+      setTimeout(() => {
+        particleIdRef.current += 1;
+        const id = particleIdRef.current;
+        // Start new particle animation
+        setParticles([{ id, x, y }]);
+      }, 0);
     } catch (error) {
       console.error("Error handling button click:", error);
     }
