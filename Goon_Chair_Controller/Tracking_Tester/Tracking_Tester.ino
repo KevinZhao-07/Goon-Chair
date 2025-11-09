@@ -7,7 +7,7 @@ const int rightReverse = 5;
 // -------------------- Constants --------------------
 const int MAX_SPEED = 150;
 const float kP = 0.167;            // proportional gain for X-centering
-const int DEFAULT_FORWARD = 67;    // default forward speed
+const int DEFAULT_FORWARD = 100;    // default forward speed
 
 // -------------------- Motor state --------------------
 int currentLeft  = 0;
@@ -37,6 +37,7 @@ void setup() {
 // -------------------- Motor update / ramping --------------------
 void updateMotors() {
   unsigned long now = millis();
+
   if(now - lastRampTime >= rampInterval){
     lastRampTime = now;
 
