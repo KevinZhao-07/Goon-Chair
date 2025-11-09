@@ -67,6 +67,25 @@ export default function Home() {
     setGooningMachineActive((prev) => !prev);
   }, [handleButtonClick]);
 
+  // New handler for sending movement commands
+  const handleMove = useCallback(async (direction: string) => {
+    console.log(`Sending command: ${direction}`);
+    try {
+      const response = await fetch(`/api/chair/${direction}`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (result.status === 'error') {
+        console.error(`Error from chair server: ${result.message}`);
+      } else {
+        console.log(`Chair server response:`, result);
+      }
+    } catch (error) {
+      console.error('Failed to send command to Next.js API route:', error);
+    }
+  }, []);
+
+
   return (
     <main className="custom-cursor min-h-screen relative overflow-hidden bg-black">
       <CustomCursor />
@@ -98,8 +117,12 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Control Buttons - Minimal */}
+          {/* Control Buttons */}
           <div className="flex gap-2 justify-center">
+            <ControlButton
+              label="Stop"
+              onClick={(e) => { handleButtonClick(e); handleMove('stop'); }}
+            />
             <ControlButton
               label="Track Person"
               onClick={handleTrackPerson}
