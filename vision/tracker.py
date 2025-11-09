@@ -12,7 +12,6 @@ import websockets
 arduino_port = 'COM7'
 arduino_baud = 115200
 arduino = None
-
 try:
     arduino = serial.Serial(arduino_port, arduino_baud, timeout=1)
     time.sleep(2)
@@ -21,16 +20,15 @@ except serial.SerialException:
     print("⚠️ Arduino not connected. Continuing without serial...")
 
 # ---------------- Serial Writer Thread ----------------
-delta_queue = Queue()
+command_queue = Queue()  # separate queue for stop/scan/track
 
 def serial_writer():
-    """Send latest deltaX or stop command to Arduino asynchronously."""
     global arduino
     while True:
-        if not delta_queue.empty() and arduino:
-            dx = delta_queue.get()
+        if not command_queue.empty() and arduino:
+            cmd = command_queue.get()
             try:
-                arduino.write(f"{dx}\n".encode())
+                arduino.write(f"{cmd}\n".encode())
             except serial.SerialException:
                 print("⚠️ Serial write failed. Closing port.")
                 arduino.close()
@@ -40,10 +38,7 @@ Thread(target=serial_writer, daemon=True).start()
 
 # ---------------- MediaPipe Setup ----------------
 mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
+pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
 # ---------------- Webcam Setup ----------------
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
@@ -54,7 +49,7 @@ cap.set(cv2.CAP_PROP_FPS, 30)
 if not cap.isOpened():
     print("❌ Cannot open webcam")
     if arduino:
-        delta_queue.put(9999)  # stop signal
+        command_queue.put(9999)
     exit()
 
 cv2.namedWindow("MediaPipe Chair Tracker", cv2.WINDOW_NORMAL)
@@ -79,12 +74,12 @@ async def ws_server():
         print("🌐 WebSocket server started on port 8765")
         await asyncio.Future()  # run forever
 
-def start_ws():
-    asyncio.run(ws_server())
-
-Thread(target=start_ws, daemon=True).start()
+Thread(target=lambda: asyncio.run(ws_server()), daemon=True).start()
 
 # ---------------- Main Loop ----------------
+sweep_direction = 1  # 1: right, -1: left
+sweep_speed = 50     # PWM speed for scanning
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -92,13 +87,11 @@ while True:
 
     height, width, _ = frame.shape
     cross_x = width // 2
-    cross_y = height // 2
 
-    # Default delta_x: stop
+    # default: stop
     delta_x = COMMAND_STOP
     torso_points = []
 
-    # Only track if UI command is 'track'
     if current_command == "track":
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         try:
@@ -109,19 +102,16 @@ while True:
         else:
             if results.pose_landmarks:
                 landmarks = results.pose_landmarks.landmark
-                torso_indices = [
-                    mp_pose.PoseLandmark.LEFT_HIP,
-                    mp_pose.PoseLandmark.RIGHT_HIP,
-                    mp_pose.PoseLandmark.LEFT_SHOULDER,
-                    mp_pose.PoseLandmark.RIGHT_SHOULDER
-                ]
+                torso_indices = [mp_pose.PoseLandmark.LEFT_HIP,
+                                 mp_pose.PoseLandmark.RIGHT_HIP,
+                                 mp_pose.PoseLandmark.LEFT_SHOULDER,
+                                 mp_pose.PoseLandmark.RIGHT_SHOULDER]
                 for idx in torso_indices:
                     lm = landmarks[idx]
                     if lm.visibility > 0.5:
                         x_px = int(lm.x * width)
                         y_px = int(lm.y * height)
                         torso_points.append((x_px, y_px))
-
                 if torso_points:
                     com_x = int(np.mean([p[0] for p in torso_points]))
                     delta_x = com_x - cross_x
@@ -130,34 +120,61 @@ while True:
             else:
                 delta_x = COMMAND_STOP
 
-    # Only send to Arduino if command is track or scan (UI controlled)
+    elif current_command == "scan":
+        # sweep left/right until person detected
+        delta_x = sweep_speed * sweep_direction
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = pose.process(rgb_frame)
+
+        torso_points = []
+        if results.pose_landmarks:
+            torso_indices = [mp_pose.PoseLandmark.LEFT_HIP,
+                             mp_pose.PoseLandmark.RIGHT_HIP,
+                             mp_pose.PoseLandmark.LEFT_SHOULDER,
+                             mp_pose.PoseLandmark.RIGHT_SHOULDER]
+            for idx in torso_indices:
+                lm = results.pose_landmarks.landmark[idx]
+                if lm.visibility > 0.5:
+                    x_px = int(lm.x * width)
+                    y_px = int(lm.y * height)
+                    torso_points.append((x_px, y_px))
+
+            if torso_points:
+                # Person detected: stop scanning
+                delta_x = COMMAND_STOP
+                # keep current_command as "scan"
+
+        # change sweep direction at frame edges
+        if delta_x > width // 2:
+            sweep_direction = -1
+        elif delta_x < -width // 2:
+            sweep_direction = 1
+
+    # send delta_x to Arduino
     if arduino is not None:
-        while not delta_queue.empty():
-            delta_queue.get_nowait()
-        delta_queue.put(delta_x)
+        while not command_queue.empty():
+            command_queue.get_nowait()
+        command_queue.put(delta_x)
 
     # ---------------- Display ----------------
     display_frame = frame.copy()
-    cv2.drawMarker(display_frame, (cross_x, cross_y), (0, 0, 255),
-                   markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
-
+    cv2.drawMarker(display_frame, (cross_x, height//2), (0,0,255), markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
+    for (x, y) in torso_points:
+        cv2.circle(display_frame, (x, y), 5, (0,255,0), -1)
     if torso_points:
-        for (x, y) in torso_points:
-            cv2.circle(display_frame, (x, y), 5, (0, 255, 0), -1)
-        cv2.circle(display_frame, (com_x, int(height/2)), 8, (255, 0, 0), -1)
+        com_x = int(np.mean([p[0] for p in torso_points]))
+        cv2.circle(display_frame, (com_x, height//2), 8, (255,0,0), -1)
 
     text = "Stopped" if delta_x == COMMAND_STOP else f"deltaX = {delta_x}"
-    color = (0, 0, 255) if delta_x == COMMAND_STOP else (255, 255, 255)
-    cv2.putText(display_frame, text, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+    color = (0,0,255) if delta_x == COMMAND_STOP else (255,255,255)
+    cv2.putText(display_frame, text, (10,40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
     cv2.imshow("MediaPipe Chair Tracker", display_frame)
-
     if cv2.waitKey(1) & 0xFF == 27:
         if arduino:
-            delta_queue.put(COMMAND_STOP)
+            command_queue.put(COMMAND_STOP)
         break
 
-# ---------------- Cleanup ----------------
 cap.release()
 cv2.destroyAllWindows()
 if arduino is not None:

@@ -6,8 +6,8 @@ const int rightReverse  = 5;
 
 // -------------------- Constants --------------------
 const int MAX_SPEED = 150;
-const int DEFAULT_FORWARD = 100;
 const float Kp = 0.167;
+const int DEFAULT_FORWARD = 100;
 const int rampStep = 5;
 
 // -------------------- Motor state --------------------
@@ -15,21 +15,13 @@ int defaultForward = 0;
 int targetLeft = 0;
 int targetRight = 0;
 
-// -------------------- PID state --------------------
-int lastError = 0;
-
 // -------------------- Serial Buffer --------------------
 const int MAX_SERIAL_LENGTH = 16;
 char serialBuffer[MAX_SERIAL_LENGTH];
 int bufferIndex = 0;
 
-// -------------------- Ultrasonic --------------------
-const int trigPin = 4;
-const int echoPin = 3;
-int stableCount = 0;
-const int stableThreshold = 5;   // stop after 3 stable readings
-const float stopMin = 40.0;
-const float stopMax = 55.0;
+// -------------------- Chair state --------------------
+bool isActive = false;  // only move when UI says track/scan
 
 // -------------------- Setup --------------------
 void setup() {
@@ -37,11 +29,10 @@ void setup() {
   pinMode(leftReverse, OUTPUT);
   pinMode(rightForward, OUTPUT);
   pinMode(rightReverse, OUTPUT);
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
 
   Serial.begin(115200);
-  Serial.println("✅ Arduino ready: PID + safety stop + ultrasonic check");
+  Serial.println("✅ Arduino ready, default STOP, waiting for UI commands");
+  stopMotors("Startup STOP");
 }
 
 // -------------------- Motor helper --------------------
@@ -60,33 +51,22 @@ void setMotorPWM(int forwardPin, int reversePin, int speed) {
 void stopMotors(const char* reason) {
   setMotorPWM(leftForward, leftReverse, 0);
   setMotorPWM(rightForward, rightReverse, 0);
+  defaultForward = 0;
+  targetLeft = 0;
+  targetRight = 0;
+  isActive = false;
   Serial.print("🛑 STOP: ");
   Serial.println(reason);
 }
 
-// -------------------- Ultrasonic distance --------------------
-float getDistance() {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  long duration = pulseIn(echoPin, HIGH, 30000); // timeout 30ms
-  return duration * 0.0343 / 2.0; // cm
-}
-
 // -------------------- Main control --------------------
-void updateMotorsPID(int deltaX, bool stopMotorsFlag) {
-  if (stopMotorsFlag) {
-    stopMotors("Sensor condition");
-    return;
-  }
+void updateMotorsPID(int deltaX) {
+  if (!isActive) return; // only act if UI activated
 
-  // Ramp default forward speed toward DEFAULT_FORWARD
+  // Ramp forward speed
   if (defaultForward < DEFAULT_FORWARD) defaultForward += rampStep;
   else if (defaultForward > DEFAULT_FORWARD) defaultForward -= rampStep;
 
-  // Simple proportional control
   int correction = int(Kp * deltaX);
   targetLeft  = constrain(defaultForward + correction, -MAX_SPEED, MAX_SPEED);
   targetRight = constrain(defaultForward - correction, -MAX_SPEED, MAX_SPEED);
@@ -105,26 +85,14 @@ void readSerial() {
         int deltaX = atoi(serialBuffer);
         bufferIndex = 0;
 
-        // Condition 1: Python tells us no person / camera issue
         if (deltaX == 9999) {
-          stopMotors("No person or camera error");
-          return;
-        }
-
-        // Condition 2: Ultrasonic safety stop
-        float distance = getDistance();
-        bool stopUltrasonic = false;
-        if (distance >= stopMin && distance <= stopMax) {
-          stableCount++;
-          if (stableCount >= stableThreshold) stopUltrasonic = true;
+          stopMotors("UI STOP / No command");
+        } else if (deltaX == 0) {
+          stopMotors("Scan detected person - stop");
         } else {
-          stableCount = 0;
+          isActive = true; // track or scan
+          updateMotorsPID(deltaX);
         }
-
-        // Update motors or stop
-        updateMotorsPID(deltaX, stopUltrasonic);
-      } else {
-        bufferIndex = 0;
       }
     } else if (bufferIndex < MAX_SERIAL_LENGTH - 1) {
       serialBuffer[bufferIndex++] = c;
