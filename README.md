@@ -1,7 +1,7 @@
 # 🤖 Smart Chair
 ### Automating Sensitive Medical Sample Collection with Precision and Comfort
 
-<img width="854" height="697" alt="image.jpg" src="https://github.com/user-attachments/assets/eba1d12a-691c-497e-8d53-5543149422ea"/>
+<img width="854" height="697" alt="image.jpg" src="https://github.com/KevinZhao-07/Go-on-Chair/blob/main/test/image.jpg?raw=true"/>
 
 ---
 
