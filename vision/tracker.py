@@ -9,7 +9,7 @@ import asyncio
 import websockets
 
 # ---------------- Arduino Setup ----------------
-arduino_port = 'COM7'
+arduino_port = 'COM5'
 arduino_baud = 115200
 arduino = None
 try:
@@ -20,7 +20,7 @@ except serial.SerialException:
     print("⚠️ Arduino not connected. Continuing without serial...")
 
 # ---------------- Serial Writer Thread ----------------
-command_queue = Queue()  # separate queue for stop/scan/track
+command_queue = Queue()  # commands to Arduino
 
 def serial_writer():
     global arduino
@@ -56,10 +56,10 @@ cv2.namedWindow("MediaPipe Chair Tracker", cv2.WINDOW_NORMAL)
 cv2.moveWindow("MediaPipe Chair Tracker", 100, 100)
 
 # ---------------- Global Command ----------------
-current_command = "stop"  # default: chair stopped
+current_command = "stop"  # default
 COMMAND_STOP = 9999       # Arduino stop sentinel
 
-# ---------------- WebSocket Server ----------------
+# ---------------- WebSocket Handler ----------------
 async def ws_handler(websocket):
     global current_command
     async for message in websocket:
@@ -69,16 +69,20 @@ async def ws_handler(websocket):
         else:
             print("❌ Unknown command:", message)
 
-async def ws_server():
-    async with websockets.serve(ws_handler, "127.0.0.1", 8765):
-        print("🌐 WebSocket server started on port 8765")
-        await asyncio.Future()  # run forever
+# ---------------- Start WebSocket Server in Thread ----------------
+def start_ws_thread():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    server = websockets.serve(ws_handler, "127.0.0.1", 8765)
+    loop.run_until_complete(server)
+    print("🌐 WebSocket server started on port 8765")
+    loop.run_forever()
 
-Thread(target=lambda: asyncio.run(ws_server()), daemon=True).start()
+Thread(target=start_ws_thread, daemon=True).start()
 
 # ---------------- Main Loop ----------------
-sweep_direction = 1  # 1: right, -1: left
-sweep_speed = 50     # PWM speed for scanning
+sweep_direction = 1
+sweep_speed = 50
 
 while True:
     ret, frame = cap.read()
@@ -87,8 +91,6 @@ while True:
 
     height, width, _ = frame.shape
     cross_x = width // 2
-
-    # default: stop
     delta_x = COMMAND_STOP
     torso_points = []
 
@@ -121,11 +123,9 @@ while True:
                 delta_x = COMMAND_STOP
 
     elif current_command == "scan":
-        # sweep left/right until person detected
         delta_x = sweep_speed * sweep_direction
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = pose.process(rgb_frame)
-
         torso_points = []
         if results.pose_landmarks:
             torso_indices = [mp_pose.PoseLandmark.LEFT_HIP,
@@ -138,19 +138,14 @@ while True:
                     x_px = int(lm.x * width)
                     y_px = int(lm.y * height)
                     torso_points.append((x_px, y_px))
-
             if torso_points:
-                # Person detected: stop scanning
                 delta_x = COMMAND_STOP
-                # keep current_command as "scan"
 
-        # change sweep direction at frame edges
         if delta_x > width // 2:
             sweep_direction = -1
         elif delta_x < -width // 2:
             sweep_direction = 1
 
-    # send delta_x to Arduino
     if arduino is not None:
         while not command_queue.empty():
             command_queue.get_nowait()
@@ -158,7 +153,8 @@ while True:
 
     # ---------------- Display ----------------
     display_frame = frame.copy()
-    cv2.drawMarker(display_frame, (cross_x, height//2), (0,0,255), markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
+    cv2.drawMarker(display_frame, (cross_x, height//2), (0,0,255),
+                   markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
     for (x, y) in torso_points:
         cv2.circle(display_frame, (x, y), 5, (0,255,0), -1)
     if torso_points:
